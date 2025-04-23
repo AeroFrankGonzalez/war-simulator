@@ -1,0 +1,28 @@
+simulation:
+  grid_size: 50
+  cell_size: 12
+  simulation_speed: 0.05  # seconds between steps
+
+terrain:
+  preset: "valley"  # Options: valley, hills
+  contact_radius: 1.0
+
+units:
+  target_change_probability: 0.02  # Probability to change target per step
+
+teams:
+  1:  # Team 1 default configuration
+    units: 20
+    speed: 1.0
+    health: 5
+  2:  # Team 2 default configuration
+    units: 20
+    speed: 1.0
+    health: 5
+
+visualization:
+  colors:
+    team1: [255, 0, 0]    # Red
+    team2: [0, 0, 255]    # Blue
+    terrain_base: [100, 100, 100]
+    vegetation: [0, 100, 0]
