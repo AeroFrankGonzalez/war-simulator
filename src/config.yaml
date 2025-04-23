@@ -1,28 +1,50 @@
+# config.yaml
+
+# Configuración general de la simulación
 simulation:
-  grid_size: 50
-  cell_size: 12
-  simulation_speed: 0.05  # seconds between steps
+  grid_size: 50          # Tamaño de la cuadrícula del terreno (ej. 50x50 celdas)
+  cell_size: 12          # Tamaño visual de cada celda en píxeles (para la visualización)
+  simulation_speed: 0.05 # Retraso en segundos entre cada paso de simulación (afecta la velocidad percibida)
 
+# Configuración del terreno
 terrain:
-  preset: "valley"  # Options: valley, hills
-  contact_radius: 1.0
+  preset: "grass_map"    # Preset de mapa a usar al inicio.
+  # Opciones de preset que puedes añadir a Terrain.create_preset en terrain.py:
+  # "valley", "hills", "forest_map", "rivers_and_lakes", "arabia", "black_forest", "team_islands", etc.
+  contact_radius: 1.0    # Radio de contacto entre unidades para que ocurra combate.
 
+# Configuración global de unidades (aplicable a todas las unidades a menos que se especifique por equipo)
 units:
-  target_change_probability: 0.02  # Probability to change target per step
+  # Probabilidad de que una unidad recalcule su target en cada paso, incluso si aún no ha llegado al target actual.
+  # Esto ayuda a que los comportamientos reaccionen a cambios en el mapa (ej. enemigos moviéndose) más a menudo.
+  target_recalculation_probability: 0.05 # Un valor ligeramente más alto (ej. 0.05) puede hacer que las unidades reaccionen más.
 
+# Configuración de los equipos (Team 1 y Team 2)
 teams:
-  1:  # Team 1 default configuration
-    units: 20
-    speed: 1.0
-    health: 5
-  2:  # Team 2 default configuration
-    units: 20
-    speed: 1.0
-    health: 5
+  1: # Configuración para el Equipo 1 (ej. Rojo)
+    units: 50          # Número inicial de unidades para este equipo.
+    speed: 1.0         # Multiplicador de velocidad base para las unidades de este equipo.
+    health: 5          # Salud inicial para las unidades de este equipo.
+    behavior: 'seek_and_destroy' # Comportamiento estratégico para las unidades de este equipo.
+    # Opciones de comportamiento (implementadas en main.py y unit.py):
+    # 'aggressive_advance': Avanza hacia un punto aleatorio en el lado enemigo.
+    # 'seek_and_destroy': Busca y ataca a la unidad enemiga más cercana.
+    # 'random_walk': Se mueve a puntos aleatorios dentro de un radio local.
 
+  2: # Configuración para el Equipo 2 (ej. Azul)
+    units: 50
+    speed: 1.0
+    health: 5
+    behavior: 'aggressive_advance' # Comportamiento estratégico para el Equipo 2.
+
+
+# Configuración de la visualización
 visualization:
   colors:
-    team1: [255, 0, 0]    # Red
-    team2: [0, 0, 255]    # Blue
-    terrain_base: [100, 100, 100]
-    vegetation: [0, 100, 0]
+    # Colores base para los equipos (usados para unidades, texto en panel, y base de color de conquista).
+    team1: [255, 0, 0]    # Rojo
+    team2: [0, 0, 255]    # Azul
+
+# Configuración de las condiciones de victoria (opcional, si quieres que la simulación termine automáticamente)
+# victory:
+#   conquest_percentage: 70.0 # Porcentaje de terreno que un equipo debe conquistar para ganar.
