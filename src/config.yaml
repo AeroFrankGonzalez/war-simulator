@@ -1,10 +1,19 @@
+# config.yaml
 simulation:
   grid_size: 50
   cell_size: 12
   simulation_speed: 0.05  # seconds between steps
 
 terrain:
-  preset: "valley"  # Options: valley, hills
+  preset: "grass_map"  # <-- Puedes cambiar esto a cualquiera de tus presets
+  # Otras opciones de preset que puedes añadir a Terrain.create_preset:
+  # preset: "valley"
+  # preset: "hills"
+  # preset: "forest_map"
+  # preset: "rivers_and_lakes"
+  # preset: "arabia"
+  # preset: "black_forest"
+  # preset: "team_islands" # Si implementas este
   contact_radius: 1.0
 
 units:
@@ -24,5 +33,7 @@ visualization:
   colors:
     team1: [255, 0, 0]    # Red
     team2: [0, 0, 255]    # Blue
-    terrain_base: [100, 100, 100]
-    vegetation: [0, 100, 0]
+    # Estos colores de vegetación y base ya no se usarán directamente para el fondo
+    # Serán manejados por el visualizador basándose en el tipo de terreno
+    # terrain_base: [100, 100, 100]
+    # vegetation: [0, 100, 0]
