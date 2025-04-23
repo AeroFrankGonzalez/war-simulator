@@ -3,24 +3,22 @@
 import pygame
 import numpy as np
 from battle import Battle
-from terrain import Terrain, TerrainType # Importa TerrainType
+from terrain import Terrain, TerrainType
 from typing import Dict, Tuple
 
 class Visualizer:
     def __init__(self, width: int, height: int, cell_size: int = 10):
         pygame.init()
         self.cell_size = cell_size
-        self.grid_width = width # Store grid dimensions
+        self.grid_width = width
         self.grid_height = height
         self.width = self.grid_width * self.cell_size
         self.height = self.grid_height * self.cell_size
-        self.screen = pygame.display.set_mode((self.width + 200, self.height))  # Added 200px for stats panel
+        self.screen = pygame.display.set_mode((self.width + 200, self.height))
         pygame.display.set_caption("War Simulator")
-        
+
         # Color definitions
         self.colors = {
-            # --- INICIO DEL CAMBIO ---
-            # Colores para los tipos de terreno
             'terrain_types': {
                 TerrainType.GRASS: pygame.Color(124, 252, 0),   # Lawn Green
                 TerrainType.WATER: pygame.Color(0, 191, 255),   # Deep Sky Blue
@@ -29,33 +27,36 @@ class Visualizer:
                 TerrainType.MOUNTAIN: pygame.Color(139, 69, 19), # Saddle Brown
                 # Añade colores para otros tipos de terreno aquí
             },
-            # Puedes mantener colores para añadir variación por altura/densidad
             'variation': {
-                'height_darken_factor': 0.5, # Cuánto oscurecer por altura (0 a 1)
-                'density_green_factor': 0.5  # Cuánto añadir de verde por densidad (0 a 1)
+                # Ajusta estos factores para controlar la influencia de altura y densidad
+                'height_shade_factor': 0.25, # Ligeramente más influencia de la altura
+                'density_factor': 0.4     # Ligeramente más influencia de la densidad
             },
-            # --- FIN DEL CAMBIO ---
             'units': {
                 1: pygame.Color(255, 0, 0),    # Team 1 (Red)
                 2: pygame.Color(0, 0, 255)     # Team 2 (Blue)
             },
             'territory': {
-                1: pygame.Color(255, 200, 200),  # Light red
-                2: pygame.Color(200, 200, 255)   # Light blue
+                # Colores más sólidos para el territorio conquistado
+                1: pygame.Color(255, 150, 150),  # Medium Light Red
+                2: pygame.Color(150, 150, 255)   # Medium Light Blue
             },
             'control': {
-                1: pygame.Color(255, 100, 100),  # Medium red
-                2: pygame.Color(100, 100, 255)   # Medium blue
+                # Indicador sutil de control actual/contienda (usado para el overlay)
+                1: pygame.Color(255, 50, 50),  # Red (Alpha will be applied dynamically)
+                2: pygame.Color(50, 50, 255)   # Blue (Alpha will be applied dynamically)
             }
         }
-        # Inicializar fuente para el panel de estadísticas
         pygame.font.init()
         self.font = pygame.font.SysFont(None, 24)
 
 
     def draw_terrain(self, terrain: Terrain) -> None:
         """Draw terrain features including type, height, density, and territory control"""
-        terrain_type_map = terrain.get_terrain_type_map() # Obtén el mapa de tipos de terreno
+        terrain_type_map = terrain.get_terrain_type_map()
+        conquest_map = terrain.conquest_map
+        conquest_progress = terrain.conquest_progress
+        control_points = terrain.control_points
 
         for y in range(terrain.height):
             for x in range(terrain.width):
@@ -66,66 +67,99 @@ class Visualizer:
                     self.cell_size
                 )
 
-                # --- INICIO DEL CAMBIO ---
-                # Dibujar color base según el tipo de terreno
+                # --- Draw Base Terrain (with height/density variation) ---
                 terrain_type = terrain_type_map[y, x]
-                # Usa un color por defecto si el tipo de terreno no está en el diccionario
                 base_color = self.colors['terrain_types'].get(terrain_type, self.colors['terrain_types'][TerrainType.GRASS])
-                
-                # Aplica variación de color basada en altura
+
                 height_value = terrain.height_map[y, x]
-                # Interpolación lineal entre el color base y un color más oscuro (o más claro)
-                # Cuanto mayor la altura, más oscuro/claro (ajusta la lógica según prefieras)
-                interp_factor = height_value * self.colors['variation']['height_darken_factor']
-                color_from_height = (
-                    int(base_color[0] * (1 - interp_factor)),
-                    int(base_color[1] * (1 - interp_factor)),
-                    int(base_color[2] * (1 - interp_factor))
+                shade_factor = height_value * self.colors['variation']['height_shade_factor']
+                shaded_color = (
+                    int(base_color[0] * (1 - shade_factor)),
+                    int(base_color[1] * (1 - shade_factor)),
+                    int(base_color[2] * (1 - shade_factor))
                 )
-                # Asegura que los valores de color estén dentro del rango 0-255
-                color_from_height = tuple(max(0, min(255, c)) for c in color_from_height)
+                shaded_color = tuple(max(0, min(255, c)) for c in shaded_color)
 
-                # Aplica variación de color basada en densidad (ej. añadir un tinte verde para vegetación)
                 density_value = terrain.density_map[y, x]
-                density_green_amount = int(density_value * self.colors['variation']['density_green_factor'] * 255)
-                final_color = (
-                    max(0, min(255, color_from_height[0])),
-                    max(0, min(255, color_from_height[1] + density_green_amount)), # Añadir verde
-                    max(0, min(255, color_from_height[2]))
+                density_color_effect = (0, 0, 0)
+                if terrain_type == TerrainType.FOREST:
+                     # Add green tint based on density in forests
+                     density_tint = int(density_value * 150 * self.colors['variation']['density_factor'])
+                     density_color_effect = (0, density_tint, 0)
+                elif terrain_type == TerrainType.MOUNTAIN:
+                     # Darken based on density in mountains/rocky areas
+                     darken_amount = int(density_value * 80 * self.colors['variation']['density_factor'])
+                     density_color_effect = (-darken_amount, -darken_amount, -darken_amount)
+                # Add effects for other terrain types if needed (e.g., lighter sand in high density areas?)
+
+
+                final_terrain_color = (
+                     max(0, min(255, shaded_color[0] + density_color_effect[0])),
+                     max(0, min(255, shaded_color[1] + density_color_effect[1])),
+                     max(0, min(255, shaded_color[2] + density_color_effect[2]))
                 )
-                # Puedes ajustar cómo se aplica la densidad para diferentes tipos de terreno
-                # Por ejemplo, la densidad podría no añadir verde en agua o arena.
-                # if terrain_type not in [TerrainType.WATER, TerrainType.SAND]:
-                #     final_color = (..., color_from_height[1] + density_green_amount, ...)
+                pygame.draw.rect(self.screen, final_terrain_color, rect)
 
 
-                pygame.draw.rect(self.screen, final_color, rect)
-                # --- FIN DEL CAMBIO ---
+                # --- Draw Conquest Status ---
+                cell_conquest_map = conquest_map[y, x]
+                cell_conquest_progress = conquest_progress[y, x]
+                cell_control_points = control_points[y, x] # Team ID currently controlling this cell (from units nearby)
 
 
-                # Dibujar control de territorio y progreso (sin cambios)
-                control_team = terrain.conquest_map[y, x]
-                if control_team > 0:
-                    territory_surface = pygame.Surface((self.cell_size, self.cell_size))
-                    territory_surface.fill(self.colors['territory'][control_team])
-                    territory_surface.set_alpha(int(terrain.conquest_progress[y, x] * 128))
+                # Layer 1: Draw the base conquered territory color with high opacity
+                # This layer shows who officially controls the cell (from conquest_map)
+                if cell_conquest_map > 0:
+                    territory_color = self.colors['territory'][cell_conquest_map]
+                    territory_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+                    # Use opacity based on progress even for controlled cells to show recent activity/reinforcement
+                    # Or keep it mostly solid for controlled territory
+                    opacity = 180 # Opacity for officially controlled territory
+                    territory_surface.fill((territory_color.r, territory_color.g, territory_color.b, opacity))
                     self.screen.blit(territory_surface, rect)
 
-                # Dibujar puntos de control actuales (sin cambios)
-                current_control = terrain.control_points[y, x]
-                if current_control > 0:
-                    control_surface = pygame.Surface((self.cell_size, self.cell_size))
-                    control_surface.fill(self.colors['control'][current_control])
-                    control_surface.set_alpha(64)  # Light indicator of current control
-                    self.screen.blit(control_surface, rect)
+
+                # Layer 2: Draw an indicator for active influence/contention (where units are)
+                # This layer shows where units are currently asserting control (from control_points)
+                if cell_control_points > 0:
+                    # Color based on the team currently asserting control
+                    control_color = self.colors['control'][cell_control_points] # Use control color (already has alpha defined or apply here)
+
+                    # Determine opacity: Higher where contested, lower where already controlled by same team
+                    # Let's make it visible over the base conquest layer
+                    opacity = 80 # Base opacity for the control indicator
+                    if cell_conquest_map == 0:
+                        # Higher opacity on neutral ground being influenced
+                         opacity = int(80 + cell_conquest_progress * 100) # More visible as progress increases on neutral
+                    elif cell_conquest_map != cell_control_points:
+                         # Highest opacity on enemy territory being contested
+                         opacity = int(120 + cell_conquest_progress * 100) # Very visible when taking enemy land
+                    # If cell_conquest_map == cell_control_points, use base opacity (80)
+
+                    opacity = min(opacity, 255) # Cap opacity at 255
+
+                    control_indicator_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+                    control_indicator_surface.fill((control_color.r, control_color.g, control_color.b, opacity))
+                    self.screen.blit(control_indicator_surface, rect)
+
+                # Optional: Draw a border around contested cells for clarity
+                # A cell is contested if different teams have control points on it,
+                # or if a team has control points on neutral or enemy territory.
+                # This requires checking control_points from *both* teams, which
+                # isn't directly available per cell in the loop here without pre-calculating.
+                # The current control_points map only stores the *last* team to mark control there in a step.
+                # A simpler contested indicator could be based on control_points > 0 on neutral/enemy land.
+                if cell_control_points > 0 and cell_conquest_map != cell_control_points:
+                     border_color = (255, 255, 0) # Yellow border
+                     pygame.draw.rect(self.screen, border_color, rect, 1) # Draw a 1px border
 
 
     def draw_units(self, battle: Battle) -> None:
         """Draw all units in the battle"""
+        # Units are drawn on top of terrain and conquest layers
         for team_id, units in battle.units.items():
             color = self.colors['units'][team_id]
             for unit in units:
-                # Asegurarse de que la unidad esté viva para dibujarla
                 if unit.health > 0:
                     x = int(unit.position[0] * self.cell_size)
                     y = int(unit.position[1] * self.cell_size)
@@ -134,7 +168,7 @@ class Visualizer:
                     pygame.draw.circle(self.screen, color, (x, y), self.cell_size // 2)
 
                     # Draw health bar
-                    max_health = 5 # Assuming max health is 5 based on config/unit class default
+                    max_health = 5 # Asumimos salud máxima de 5
                     health_width = (self.cell_size * unit.health) // max_health
                     health_height = 2
                     health_rect = pygame.Rect(
@@ -143,13 +177,12 @@ class Visualizer:
                         health_width,
                         health_height
                     )
-                    # Colores de la barra de vida
-                    if unit.health > max_health * 0.6: # > 60%
-                         health_color = (0, 255, 0) # Green
-                    elif unit.health > max_health * 0.2: # > 20%
-                         health_color = (255, 165, 0) # Orange
-                    else: # <= 20%
-                         health_color = (255, 0, 0) # Red
+                    if unit.health > max_health * 0.6:
+                         health_color = (0, 255, 0)
+                    elif unit.health > max_health * 0.2:
+                         health_color = (255, 165, 0)
+                    else:
+                         health_color = (255, 0, 0)
 
                     pygame.draw.rect(self.screen, health_color, health_rect)
 
@@ -197,7 +230,7 @@ class Visualizer:
             self._draw_text(f"Kills: {kills}", (self.width + 20, y_pos))
             y_pos += padding
             self._draw_text(f"Losses: {losses}", (self.width + 20, y_pos))
-            y_pos += padding * 1.5 # Extra space between teams
+            y_pos += padding * 1.5
 
     def _draw_text(self, text: str, position: Tuple[int, int], color=(200, 200, 200)):
         """Helper method to draw text"""
@@ -213,7 +246,7 @@ class Visualizer:
 
         self.screen.fill((0, 0, 0))  # Clear screen
         self.draw_terrain(battle.terrain)
-        self.draw_units(battle)
+        self.draw_units(battle) # Units are drawn last so they appear on top
         self.draw_stats_panel(battle)
         pygame.display.flip()
         return True
@@ -229,7 +262,10 @@ class Visualizer:
         self.cell_size = cell_size
         self.width = self.grid_width * self.cell_size
         self.height = self.grid_height * self.cell_size
-        # Resize the window (requires re-setting the display mode)
-        self.screen = pygame.display.set_mode((self.width + 200, self.height))
-        pygame.display.set_caption("War Simulator")
-        # You might need to re-initialize fonts or other assets if they were linked to the screen
+        try:
+            self.screen = pygame.display.set_mode((self.width + 200, self.height))
+            pygame.display.set_caption("War Simulator")
+        except pygame.error as e:
+            print(f"Could not set display mode: {e}")
+            self.screen = pygame.display.set_mode((200, 200)) # Fallback
+            pygame.display.set_caption("Error")
