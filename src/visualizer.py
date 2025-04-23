@@ -37,14 +37,14 @@ class Visualizer:
                 2: pygame.Color(0, 0, 255)     # Team 2 (Blue)
             },
             'territory': {
-                # Colores más sólidos para el territorio conquistado
+                # Colores para el territorio oficialmente conquistado
                 1: pygame.Color(255, 150, 150),  # Medium Light Red
                 2: pygame.Color(150, 150, 255)   # Medium Light Blue
             },
-            'control': {
-                # Indicador sutil de control actual/contienda (usado para el overlay)
-                1: pygame.Color(255, 50, 50),  # Red (Alpha will be applied dynamically)
-                2: pygame.Color(50, 50, 255)   # Blue (Alpha will be applied dynamically)
+             'contested_indicator': {
+                # Color o estilo para indicar áreas bajo influencia activa/contendidas
+                'border_color': (255, 255, 0), # Yellow border
+                'overlay_alpha': 80           # Semi-transparent overlay alpha
             }
         }
         pygame.font.init()
@@ -56,7 +56,7 @@ class Visualizer:
         terrain_type_map = terrain.get_terrain_type_map()
         conquest_map = terrain.conquest_map
         conquest_progress = terrain.conquest_progress
-        control_points = terrain.control_points
+        control_points = terrain.control_points # Immediate control based on unit proximity
 
         for y in range(terrain.height):
             for x in range(terrain.width):
@@ -83,15 +83,11 @@ class Visualizer:
                 density_value = terrain.density_map[y, x]
                 density_color_effect = (0, 0, 0)
                 if terrain_type == TerrainType.FOREST:
-                     # Add green tint based on density in forests
                      density_tint = int(density_value * 150 * self.colors['variation']['density_factor'])
                      density_color_effect = (0, density_tint, 0)
                 elif terrain_type == TerrainType.MOUNTAIN:
-                     # Darken based on density in mountains/rocky areas
                      darken_amount = int(density_value * 80 * self.colors['variation']['density_factor'])
                      density_color_effect = (-darken_amount, -darken_amount, -darken_amount)
-                # Add effects for other terrain types if needed (e.g., lighter sand in high density areas?)
-
 
                 final_terrain_color = (
                      max(0, min(255, shaded_color[0] + density_color_effect[0])),
@@ -104,54 +100,37 @@ class Visualizer:
                 # --- Draw Conquest Status ---
                 cell_conquest_map = conquest_map[y, x]
                 cell_conquest_progress = conquest_progress[y, x]
-                cell_control_points = control_points[y, x] # Team ID currently controlling this cell (from units nearby)
+                cell_control_points = control_points[y, x]
 
 
-                # Layer 1: Draw the base conquered territory color with high opacity
-                # This layer shows who officially controls the cell (from conquest_map)
+                # Layer 1: Draw the base conquered territory color (semi-solid)
+                # This shows the "official" control from the conquest_map
                 if cell_conquest_map > 0:
                     territory_color = self.colors['territory'][cell_conquest_map]
                     territory_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
-                    # Use opacity based on progress even for controlled cells to show recent activity/reinforcement
-                    # Or keep it mostly solid for controlled territory
-                    opacity = 180 # Opacity for officially controlled territory
-                    territory_surface.fill((territory_color.r, territory_color.g, territory_color.b, opacity))
+                    territory_surface.fill((territory_color.r, territory_color.g, territory_color.b, 180)) # High opacity
                     self.screen.blit(territory_surface, rect)
 
 
                 # Layer 2: Draw an indicator for active influence/contention (where units are)
-                # This layer shows where units are currently asserting control (from control_points)
+                # This shows where units are currently asserting control (from control_points)
+                # This layer should highlight the 3x3 areas around units
                 if cell_control_points > 0:
-                    # Color based on the team currently asserting control
-                    control_color = self.colors['control'][cell_control_points] # Use control color (already has alpha defined or apply here)
+                    # Use the color of the team currently asserting control
+                    indicator_color_rgb = self.colors['units'][cell_control_points]
 
-                    # Determine opacity: Higher where contested, lower where already controlled by same team
-                    # Let's make it visible over the base conquest layer
-                    opacity = 80 # Base opacity for the control indicator
-                    if cell_conquest_map == 0:
-                        # Higher opacity on neutral ground being influenced
-                         opacity = int(80 + cell_conquest_progress * 100) # More visible as progress increases on neutral
-                    elif cell_conquest_map != cell_control_points:
-                         # Highest opacity on enemy territory being contested
-                         opacity = int(120 + cell_conquest_progress * 100) # Very visible when taking enemy land
-                    # If cell_conquest_map == cell_control_points, use base opacity (80)
+                    # Draw a semi-transparent overlay with the team's color
+                    indicator_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
+                    # Opacity can vary based on conquest progress for a more dynamic look
+                    # Or just use a fixed opacity for the indicator
+                    opacity = self.colors['contested_indicator']['overlay_alpha'] # Fixed opacity for clarity
+                    indicator_surface.fill((indicator_color_rgb.r, indicator_color_rgb.g, indicator_color_rgb.b, opacity))
+                    self.screen.blit(indicator_surface, rect)
 
-                    opacity = min(opacity, 255) # Cap opacity at 255
-
-                    control_indicator_surface = pygame.Surface((self.cell_size, self.cell_size), pygame.SRCALPHA)
-                    control_indicator_surface.fill((control_color.r, control_color.g, control_color.b, opacity))
-                    self.screen.blit(control_indicator_surface, rect)
-
-                # Optional: Draw a border around contested cells for clarity
-                # A cell is contested if different teams have control points on it,
-                # or if a team has control points on neutral or enemy territory.
-                # This requires checking control_points from *both* teams, which
-                # isn't directly available per cell in the loop here without pre-calculating.
-                # The current control_points map only stores the *last* team to mark control there in a step.
-                # A simpler contested indicator could be based on control_points > 0 on neutral/enemy land.
-                if cell_control_points > 0 and cell_conquest_map != cell_control_points:
-                     border_color = (255, 255, 0) # Yellow border
-                     pygame.draw.rect(self.screen, border_color, rect, 1) # Draw a 1px border
+                    # Optional: Draw a border around cells that are being actively influenced
+                    # This makes the 3x3 squares stand out more clearly
+                    border_color = self.colors['contested_indicator']['border_color']
+                    pygame.draw.rect(self.screen, border_color, rect, 1) # Draw a 1px border
 
 
     def draw_units(self, battle: Battle) -> None:
