@@ -1,154 +1,138 @@
 from typing import List, Dict, Tuple
 import numpy as np
-from unit import Unit
-from terrain import Terrain # Asegúrate de que esta importación sea correcta
+import random
+from terrain import Terrain
 
 class Battle:
-    def __init__(self, terrain: Terrain, contact_radius: float = 1.0):
+    def __init__(self, terrain: Terrain, config: dict):
         self.terrain = terrain
-        self.units: Dict[int, List[Unit]] = {}  # team_id -> list of units
-        self.contact_radius = contact_radius
+        self.config = config
+        self.width = terrain.width
+        self.height = terrain.height
+        
+        self.grid = np.zeros((self.height, self.width), dtype=int)
+        
         self.step_count = 0
         self.combat_stats = {
-            'kills': {},
-            'losses': {},
-            'territory': {}
+            'kills': {1: 0, 2: 0},
+            'losses': {1: 0, 2: 0},
+            'territory': {1: 0.0, 2: 0.0}
         }
+        
+        self.initialize_grid()
 
-    def add_unit(self, unit: Unit) -> None:
-        """Add a unit to the battle"""
-        if unit.team_id not in self.units:
-            self.units[unit.team_id] = []
-        self.units[unit.team_id].append(unit)
+    def initialize_grid(self):
+        teams_config = self.config.get('teams', {})
+        spawn_width = int(self.width * 0.3)
+        
+        for team_id, team_cfg in teams_config.items():
+            pop_percent = team_cfg.get('initial_pop_percent', 0.2)
+            
+            if team_id == 1:
+                x_start, x_end = 0, spawn_width
+            else:
+                x_start, x_end = self.width - spawn_width, self.width
+            
+            spawn_area = np.zeros((self.height, self.width), dtype=bool)
+            spawn_area[:, x_start:x_end] = True
+            
+            random_grid = np.random.random((self.height, self.width))
+            placement_mask = spawn_area & (random_grid < pop_percent)
+            
+            self.grid[placement_mask] = team_id
+            
+        self.terrain.conquest_map = self.grid.astype(int)
+
+    def get_neighbor_counts(self, grid_mask):
+        grid = grid_mask.astype(int)
+        neighbors = np.zeros_like(grid, dtype=int)
+        
+        neighbors[1:, :] += grid[:-1, :]
+        neighbors[:-1, :] += grid[1:, :]
+        neighbors[:, 1:] += grid[:, :-1]
+        neighbors[:, :-1] += grid[:, 1:]
+        neighbors[1:, 1:] += grid[:-1, :-1]
+        neighbors[1:, :-1] += grid[:-1, 1:]
+        neighbors[:-1, 1:] += grid[1:, :-1]
+        neighbors[:-1, :-1] += grid[1:, 1:]
+        
+        return neighbors
 
     def step(self) -> Dict:
-        """Execute one step of the battle simulation"""
         self.step_count += 1
+        
+        mask1 = (self.grid == 1)
+        mask2 = (self.grid == 2)
+        
+        n1 = self.get_neighbor_counts(mask1)
+        n2 = self.get_neighbor_counts(mask2)
+        
+        rules = self.config.get('automaton_rules', {})
+        survival_threshold = set(rules.get('survival_threshold', [2, 3]))
+        birth_threshold = set(rules.get('birth_threshold', [3]))
+        enemy_tolerance = rules.get('enemy_tolerance', 3)
+        
+        next_grid = np.zeros_like(self.grid)
+        
+        survive_n1 = np.isin(n1, list(survival_threshold))
+        survive_n2 = np.isin(n2, list(survival_threshold))
+        
+        safe_from_2 = (n2 <= enemy_tolerance)
+        safe_from_1 = (n1 <= enemy_tolerance)
+        
+        t1_survives = mask1 & survive_n1 & safe_from_2
+        t2_survives = mask2 & survive_n2 & safe_from_1
+        
+        next_grid[t1_survives] = 1
+        next_grid[t2_survives] = 2
+        
+        died_t1_combat = mask1 & (n2 > enemy_tolerance)
+        died_t2_combat = mask2 & (n1 > enemy_tolerance)
+        
+        self.combat_stats['losses'][1] += np.sum(died_t1_combat)
+        self.combat_stats['losses'][2] += np.sum(died_t2_combat)
+        self.combat_stats['kills'][2] += np.sum(died_t1_combat) 
+        self.combat_stats['kills'][1] += np.sum(died_t2_combat) 
+        
+        empty_mask = (self.grid == 0)
+        
+        born_n1 = np.isin(n1, list(birth_threshold))
+        born_n2 = np.isin(n2, list(birth_threshold))
+        
+        birth_t1_cand = empty_mask & born_n1
+        birth_t2_cand = empty_mask & born_n2
+        
+        conflict = birth_t1_cand & birth_t2_cand
+        
+        t1_wins = conflict & (n1 > n2)
+        t2_wins = conflict & (n2 > n1)
+        
+        final_birth_t1 = birth_t1_cand & (~conflict | t1_wins)
+        final_birth_t2 = birth_t2_cand & (~conflict | t2_wins)
+        
+        next_grid[final_birth_t1] = 1
+        next_grid[final_birth_t2] = 2
+        
+        self.grid = next_grid
+        
+        self.terrain.conquest_map = self.grid.astype(int)
+        
+        total_cells = self.width * self.height
+        if total_cells > 0:
+            self.combat_stats['territory'][1] = (np.sum(next_grid == 1) / total_cells) * 100
+            self.combat_stats['territory'][2] = (np.sum(next_grid == 2) / total_cells) * 100
 
-        # --- 1. Process unit movements ---
-        # Iterar sobre una copia de los diccionarios de unidades para evitar problemas si los equipos son eliminados
-        # o si las unidades mueren durante la iteración (aunque el movimiento no mata, es buena práctica para el bucle general).
-        for team_id, team_units in list(self.units.items()):
-            # Iterar sobre una copia de la lista de unidades del equipo.
-            for unit in list(team_units):
-                # Asegurarse de que la unidad está viva antes de intentar moverla o procesarla.
-                if unit.health > 0:
-                    # Obtener el modificador de velocidad del terreno para la posición actual de la unidad.
-                    # Las coordenadas de la unidad son flotantes, necesitamos convertirlas a enteros para indexar la matriz del terreno.
-                    x, y = int(unit.position[0]), int(unit.position[1])
-
-                    # Asegurarse de que estos índices enteros estén dentro de los límites válidos de la matriz del terreno.
-                    # Esto maneja casos donde la unidad podría estar justo en el borde o fuera (si el movimiento la llevó allí).
-                    x = max(0, min(x, self.terrain.width - 1))
-                    y = max(0, min(y, self.terrain.height - 1))
-
-                    terrain_mod = self.terrain.get_movement_modifier(x, y)
-
-                    # --- INICIO DEL AJUSTE CLAVE para el TypeError ---
-                    # Mover la unidad SOLAMENTE si tiene un target válido (es decir, no es None).
-                    # Esta comprobación aquí dentro del método step de Battle es crucial
-                    # porque este es el lugar donde unit.move es llamado.
-                    if unit.target is not None:
-                         # Llamar al método move de la unidad, pasando el target, modificador y límites del terreno.
-                         unit.move(unit.target, terrain_mod, (self.terrain.width, self.terrain.height))
-                    else:
-                         # Si la unidad no tiene target asignado en este punto (por ejemplo, aún no se le ha dado uno
-                         # o el comportamiento decidió no asignarle uno en este paso), simplemente se queda quieta.
-                         pass # La unidad se queda quieta.
-                    # --- FIN DEL AJUSTE CLAVE ---
-
-
-        # --- 2. Process combat ---
-        # Procesar el combate y determinar qué unidades mueren.
-        casualties = []
-        # Iterar sobre copias de las listas de unidades para manejar de forma segura la eliminación de unidades debido al combate.
-        for team1_id, team1_units in list(self.units.items()):
-            for unit1 in list(team1_units):
-                 # Solo procesar combate para unidades que aún están vivas.
-                 if unit1.health > 0:
-                    # Iterar sobre los equipos enemigos.
-                    for team2_id, team2_units in list(self.units.items()):
-                        # Asegurarse de que no sea el mismo equipo.
-                        if team1_id != team2_id:
-                            # Iterar sobre las unidades enemigas (también copia).
-                            for unit2 in list(team2_units):
-                                # Solo procesar combate con unidades enemigas que aún están vivas.
-                                # Y si unit1 está dentro del rango de contacto de unit2.
-                                if unit2.health > 0 and unit1.is_in_contact_range(unit2, self.contact_radius):
-                                    # unit1 ataca a unit2. unit2 intenta recibir daño.
-                                    if unit2.take_damage():
-                                        # Si unit2 muere, añadirla a la lista de bajas.
-                                        casualties.append((team2_id, unit2))
-                                        unit1.kills += 1 # Acreditar la baja a unit1.
-
-
-        # --- 3. Remove casualties and update stats ---
-        # Eliminar las unidades que murieron en este paso de la batalla.
-        # Creamos un nuevo diccionario de unidades que solo contenga las unidades vivas.
-        alive_units: Dict[int, List[Unit]] = {}
-        # Iterar sobre los equipos y sus unidades actuales.
-        for team_id, team_units in self.units.items():
-            # Filtrar las unidades que tengan salud > 0 (las vivas).
-            alive_units[team_id] = [unit for unit in team_units if unit.health > 0]
-        # Actualizar el diccionario principal de unidades de la batalla con solo las unidades vivas.
-        self.units = alive_units
-
-        # Actualizar las estadísticas de combate basadas en la lista de bajas recolectada.
-        for team_id, dead_unit in casualties:
-             # Incrementar el contador de pérdidas para el equipo de la unidad que murió.
-             # Usar .get() con valor por defecto 0 para manejar el primer registro para un equipo.
-             if team_id not in self.combat_stats['losses']:
-                self.combat_stats['losses'][team_id] = 0
-             self.combat_stats['losses'][team_id] += 1
-
-
-        # --- 4. Update territory control ---
-        # Actualizar el estado de conquista del terreno.
-        # Se necesitan las posiciones actuales de TODAS las unidades vivas para esto.
-        unit_positions = {
-            # Crear un diccionario mapeando team_id a una lista de tuplas (x, y) de las posiciones de las unidades.
-            team_id: [(u.position[0], u.position[1]) for u in units]
-            for team_id, units in self.units.items() # Iterar sobre el diccionario de unidades VIVAS.
-        }
-        # Llamar al método update_conquest del terreno con las posiciones de las unidades vivas.
-        # El método update_conquest maneja la lógica de progreso y el mapa de conquista oficial.
-        # Se usa un conquest_rate por defecto de 0.1 (puedes hacerlo configurable si lo necesitas).
-        self.terrain.update_conquest(unit_positions, conquest_rate=0.1)
-
-        # Actualizar las estadísticas de territorio conquistado basadas en el estado actual del terreno.
-        # Iteramos sobre los IDs de equipo esperados (1 y 2) para asegurar que las estadísticas se muestren para ambos,
-        # incluso si un equipo ya no tiene unidades vivas pero controlaba territorio.
-        for team_id in [1, 2]: # Asumiendo IDs de equipo 1 y 2. Ajusta si usas otros IDs.
-             # Obtener el porcentaje de conquista para el equipo, usando 0.0 como valor por defecto si no existe.
-             self.combat_stats['territory'][team_id] = self.terrain.get_conquest_percentage(team_id)
-
-
-        # --- Retornar las estadísticas actuales de la batalla ---
-        # Se llama a get_battle_stats para compilar todas las estadísticas relevantes para este paso.
         return self.get_battle_stats()
 
-
     def get_battle_stats(self) -> Dict:
-        """Return current battle statistics"""
         stats = {
-            # Número total de pasos de simulación ejecutados.
             'step': self.step_count,
-            # Conteo de unidades vivas restantes por equipo.
-            'units_remaining': {team_id: len(units) for team_id, units in self.units.items()},
-            # Porcentaje de terreno controlado oficialmente por cada equipo.
+            'units_remaining': {
+                1: int(np.sum(self.grid == 1)),
+                2: int(np.sum(self.grid == 2))
+            },
             'territory_control': self.combat_stats['territory'],
-            # Conteo de unidades perdidas (muertas) por cada equipo.
             'casualties': self.combat_stats['losses'],
-            # Conteo de unidades enemigas eliminadas por cada equipo.
-            'total_kills': {
-                # Sumar los contadores de kills de las unidades vivas restantes.
-                # Nota: Esto solo cuenta las kills de unidades que SOBREVIVIERON al paso actual.
-                # Si necesitas el total de kills incluyendo unidades que murieron,
-                # la lógica de conteo de kills debería acumularse en combat_stats['kills']
-                # cuando una unidad muere, en lugar de solo sumar las kills de unidades vivas.
-                # Por ahora, sumamos las kills de las unidades VIVAS restantes.
-                team_id: sum(unit.kills for unit in units)
-                for team_id, units in self.units.items() # Iterar sobre el diccionario de unidades VIVAS.
-            }
+            'total_kills': self.combat_stats['kills']
         }
         return stats
