@@ -79,12 +79,15 @@ class Visualizer:
     def draw_units(self, battle: Battle) -> None:
         """Draw all units in the battle from the grid."""
         # Iterate over the grid to find occupied cells
+        # Since grid is numpy array, iterating by index is okay, 
+        # or we could use np.argwhere for potentially faster sparse iteration if grid is sparse.
+        # maintaining loop for simplicity and consistency with terrain drawing.
         for y in range(battle.height):
             for x in range(battle.width):
-                unit = battle.grid[y, x]
-                if unit:
+                team_id = battle.grid[y, x]
+                if team_id > 0:
                     # Draw unit as a filled rectangle or circle in the cell
-                    color = self.colors['units'].get(unit.team_id, (255, 255, 255))
+                    color = self.colors['units'].get(team_id, (255, 255, 255))
                     
                     # Calculate pixel position
                     px = x * self.cell_size

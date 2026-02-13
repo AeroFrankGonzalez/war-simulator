@@ -8,7 +8,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src'
 
 from battle import Battle
 from terrain import Terrain
-from unit import Unit
 
 class TestCellularAutomaton(unittest.TestCase):
     def setUp(self):
@@ -18,75 +17,70 @@ class TestCellularAutomaton(unittest.TestCase):
                 'birth_threshold': [3],
                 'enemy_tolerance': 3
             },
-            'teams': {1: {}, 2: {}} # Empty config to avoid auto-population
+            'teams': {1: {}, 2: {}} 
         }
-        # Use a small grid for testing
         self.terrain = Terrain(10, 10)
-        # Mock battle initialization to avoid random population
         self.battle = Battle(self.terrain, self.config)
-        # Clear the grid manually to be sure
-        self.battle.grid = np.empty((10, 10), dtype=object)
+        # Manually clear grid to ensure clean slate (using zeros for int grid)
+        self.battle.grid = np.zeros((10, 10), dtype=int)
 
     def test_underpopulation(self):
         """Test that a unit dies with < 2 neighbors."""
-        # Place one unit at 5,5
-        self.battle.grid[5, 5] = Unit(team_id=1)
+        # Place one Team 1 unit at 5,5
+        self.battle.grid[5, 5] = 1
         # Place one neighbor at 5,6
-        self.battle.grid[5, 6] = Unit(team_id=1)
+        self.battle.grid[5, 6] = 1
         
         self.battle.step()
         
-        # Both should die because each has only 1 neighbor
-        self.assertIsNone(self.battle.grid[5, 5], "Unit should die from underpopulation")
-        self.assertIsNone(self.battle.grid[5, 6], "Unit should die from underpopulation")
+        # Both should die (become 0) because each has only 1 neighbor
+        self.assertEqual(self.battle.grid[5, 5], 0, "Unit should die from underpopulation")
+        self.assertEqual(self.battle.grid[5, 6], 0, "Unit should die from underpopulation")
 
     def test_survival(self):
         """Test that a unit survives with 2 or 3 neighbors."""
         # Create a block (2x2 square), static life
-        # Top-left 1,1
-        self.battle.grid[1, 1] = Unit(team_id=1)
-        self.battle.grid[1, 2] = Unit(team_id=1)
-        self.battle.grid[2, 1] = Unit(team_id=1)
-        self.battle.grid[2, 2] = Unit(team_id=1)
+        self.battle.grid[1, 1] = 1
+        self.battle.grid[1, 2] = 1
+        self.battle.grid[2, 1] = 1
+        self.battle.grid[2, 2] = 1
         
         self.battle.step()
         
-        self.assertIsNotNone(self.battle.grid[1, 1], "Unit should survive (Block pattern)")
-        self.assertIsNotNone(self.battle.grid[1, 2], "Unit should survive (Block pattern)")
-        self.assertIsNotNone(self.battle.grid[2, 1], "Unit should survive (Block pattern)")
-        self.assertIsNotNone(self.battle.grid[2, 2], "Unit should survive (Block pattern)")
+        self.assertEqual(self.battle.grid[1, 1], 1, "Unit should survive (Block pattern)")
+        self.assertEqual(self.battle.grid[1, 2], 1, "Unit should survive (Block pattern)")
+        self.assertEqual(self.battle.grid[2, 1], 1, "Unit should survive (Block pattern)")
+        self.assertEqual(self.battle.grid[2, 2], 1, "Unit should survive (Block pattern)")
 
     def test_birth(self):
         """Test that a unit is born with 3 neighbors."""
         # Place 3 neighbors around 5,5
-        self.battle.grid[4, 5] = Unit(team_id=1)
-        self.battle.grid[5, 4] = Unit(team_id=1)
-        self.battle.grid[5, 6] = Unit(team_id=1)
+        self.battle.grid[4, 5] = 1
+        self.battle.grid[5, 4] = 1
+        self.battle.grid[5, 6] = 1
         
         # 5,5 is empty initially
-        self.assertIsNone(self.battle.grid[5, 5])
+        self.assertEqual(self.battle.grid[5, 5], 0)
         
         self.battle.step()
         
-        # 5,5 should now have a unit
-        new_unit = self.battle.grid[5, 5]
-        self.assertIsNotNone(new_unit, "Unit should be born")
-        self.assertEqual(new_unit.team_id, 1, "Born unit should belong to neighbors' team")
+        # 5,5 should now have a unit (1)
+        self.assertEqual(self.battle.grid[5, 5], 1, "Unit should be born")
 
     def test_combat_overwhelming(self):
         """Test that a unit dies if overwhelmed by enemies."""
         # Place 1 Team 1 unit
-        self.battle.grid[5, 5] = Unit(team_id=1)
+        self.battle.grid[5, 5] = 1
         
         # Place 4 Team 2 neighbors (Enemy tolerance is 3)
-        self.battle.grid[4, 5] = Unit(team_id=2)
-        self.battle.grid[5, 4] = Unit(team_id=2)
-        self.battle.grid[5, 6] = Unit(team_id=2)
-        self.battle.grid[6, 5] = Unit(team_id=2)
+        self.battle.grid[4, 5] = 2
+        self.battle.grid[5, 4] = 2
+        self.battle.grid[5, 6] = 2
+        self.battle.grid[6, 5] = 2
         
         self.battle.step()
         
-        self.assertIsNone(self.battle.grid[5, 5], "Unit should die from enemy overwhelming")
+        self.assertEqual(self.battle.grid[5, 5], 0, "Unit should die from enemy overwhelming")
 
 if __name__ == '__main__':
     unittest.main()
