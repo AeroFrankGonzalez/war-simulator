@@ -1,7 +1,7 @@
 import pygame
 import numpy as np
 from battle import Battle
-from terrain import Terrain, TerrainType
+from terrain import Terrain
 from typing import Dict, Tuple
 
 class Visualizer:
@@ -9,148 +9,172 @@ class Visualizer:
         self.cell_size = cell_size
         self.grid_width = width
         self.grid_height = height
+        
         self.width = self.grid_width * self.cell_size
         self.height = self.grid_height * self.cell_size
+        
+        self.ui_width = 250
+        self.total_width = self.width + self.ui_width
 
         try:
-            self.screen = pygame.display.set_mode((self.width + 200, self.height))
-            pygame.display.set_caption("War Simulator - Cellular Automaton")
+            self.screen = pygame.display.set_mode((self.total_width, self.height))
+            pygame.display.set_caption("Neo-Warfare Simulator")
         except pygame.error as e:
-            print(f"Error initializing Pygame display: {e}")
-            if pygame.get_init():
-                 pygame.quit()
+            print(f"Error initializing Pygame: {e}")
             raise
 
         self.colors = {
-            'terrain_types': {
-                TerrainType.GRASS: pygame.Color(124, 252, 0),
-                TerrainType.WATER: pygame.Color(0, 191, 255),
-                TerrainType.FOREST: pygame.Color(34, 139, 34),
-                TerrainType.SAND: pygame.Color(245, 222, 179),
-                TerrainType.MOUNTAIN: pygame.Color(139, 69, 19),
-            },
-            'variation': {
-                'height_shade_factor': 0.25,
-                'density_factor': 0.4
-            },
-            'units': {
-                1: pygame.Color(255, 0, 0),
-                2: pygame.Color(0, 0, 255)
-            },
-            'territory': {
-                1: pygame.Color(255, 150, 150),
-                2: pygame.Color(150, 150, 255)
-            }
+            'background': (5, 5, 8),
+            'grid_lines': (20, 25, 30),
+            'ui_bg': (15, 15, 20),
+            'text': (200, 220, 230),
+            'team1': (0, 255, 200),     # Cyan
+            'team2': (255, 0, 100),     # Neon Pink
+            'team1_dark': (0, 80, 60),
+            'team2_dark': (80, 0, 30),
+            # Explicit Territory Colors (Alpha simulated via dark shades)
+            't1_territory': (0, 40, 40), # Dark Cyan Background
+            't2_territory': (40, 0, 20), # Dark Pink Background
+            'contest_zone': (20, 20, 20) # Grey Neutral
         }
+        
         pygame.font.init()
-        self.font = pygame.font.SysFont(None, 24)
-
-    def draw_terrain(self, terrain: Terrain) -> None:
-        terrain_type_map = terrain.get_terrain_type_map()
+        self.font_header = pygame.font.SysFont("Arial", 18, bold=True)
+        self.font_body = pygame.font.SysFont("Arial", 14)
+        self.font_big = pygame.font.SysFont("Arial", 48, bold=True)
         
-        for y in range(terrain.height):
-            for x in range(terrain.width):
-                rect = pygame.Rect(
-                    x * self.cell_size,
-                    y * self.cell_size,
-                    self.cell_size,
-                    self.cell_size
-                )
-                
-                terrain_type = terrain_type_map[y, x]
-                base_color = self.colors['terrain_types'].get(terrain_type, self.colors['terrain_types'][TerrainType.GRASS])
-                
-                height_value = terrain.height_map[y, x]
-                shade_factor = height_value * self.colors['variation']['height_shade_factor']
-                shaded_color = (
-                    int(base_color[0] * (1 - shade_factor)),
-                    int(base_color[1] * (1 - shade_factor)),
-                    int(base_color[2] * (1 - shade_factor))
-                )
-                final_terrain_color = tuple(max(0, min(255, c)) for c in shaded_color)
-                
-                pygame.draw.rect(self.screen, final_terrain_color, rect)
+        self.ui_elements = []
 
-    def draw_units(self, battle: Battle) -> None:
-        for y in range(battle.height):
-            for x in range(battle.width):
-                team_id = battle.grid[y, x]
-                if team_id > 0:
-                    color = self.colors['units'].get(team_id, (255, 255, 255))
-                    px = x * self.cell_size
-                    py = y * self.cell_size
-                    unit_rect = pygame.Rect(
-                        px + 1, py + 1, 
-                        self.cell_size - 2, self.cell_size - 2
-                    )
-                    pygame.draw.rect(self.screen, color, unit_rect)
-
-    def draw_stats_panel(self, battle: Battle) -> None:
-        stats = battle.get_battle_stats()
-        panel_rect = pygame.Rect(self.width, 0, 200, self.height)
-        pygame.draw.rect(self.screen, (50, 50, 50), panel_rect)
-
-        y_pos = 10
-        padding = 20
-
-        self._draw_text(f"Step: {stats.get('step', 0)}", (self.width + 10, y_pos), color=(255, 255, 255))
-        y_pos += padding
+    def draw_terrain_background(self, battle: Battle):
+        self.screen.fill(self.colors['background'])
         
-        pygame.draw.line(self.screen, (100, 100, 100), (self.width + 10, y_pos), (self.width + 190, y_pos))
-        y_pos += padding
+        # Draw Influence Map (Conquest Zones) - VISIBLE BLOCKS
+        threshold = 2.0 # Lower threshold for visibility
+        
+        # Team 1 Territory
+        # Draw explicit rects for territory
+        # Optimization: Don't draw every single cell if not needed, but grid is small (50x50), so 2500 rects is fine.
+        
+        y_idxs, x_idxs = np.where(battle.influence > threshold)
+        if len(y_idxs) > 0:
+            c = self.colors['t1_territory']
+            for y, x in zip(y_idxs, x_idxs):
+                pygame.draw.rect(self.screen, c, 
+                               (x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size))
 
-        for team_id in [1, 2]:
-            team_color = self.colors['units'].get(team_id, (200, 200, 200))
-            if isinstance(team_color, pygame.Color):
-                 team_color = (team_color.r, team_color.g, team_color.b)
+        # Team 2 Territory
+        y_idxs, x_idxs = np.where(battle.influence < -threshold)
+        if len(y_idxs) > 0:
+            c = self.colors['t2_territory']
+            for y, x in zip(y_idxs, x_idxs):
+                pygame.draw.rect(self.screen, c, 
+                               (x * self.cell_size, y * self.cell_size, self.cell_size, self.cell_size))
 
-            self._draw_text(f"Team {team_id}", (self.width + 10, y_pos), color=team_color)
-            y_pos += padding
+    def draw_units(self, battle: Battle):
+        rw, rh = self.cell_size - 1, self.cell_size - 1
+        if rw < 1: rw = 1
+        if rh < 1: rh = 1
+        max_age = 60.0
+        
+        # Team 1
+        y_idxs, x_idxs = np.where(battle.grid == 1)
+        if len(y_idxs) > 0:
+            ages = battle.ages[y_idxs, x_idxs]
+            base_c = np.array(self.colors['team1'])
+            dark_c = np.array(self.colors['team1_dark'])
+            for y, x, age in zip(y_idxs, x_idxs, ages):
+                ratio = min(1.0, age / max_age)
+                final_c = base_c * (1 - ratio) + dark_c * ratio
+                pygame.draw.rect(self.screen, final_c, (x * self.cell_size + 1, y * self.cell_size + 1, rw-2, rh-2))
             
-            units_count = stats.get('units_remaining', {}).get(team_id, 0)
-            self._draw_text(f"Live Cells: {units_count}", (self.width + 20, y_pos))
-            y_pos += padding
+        # Team 2
+        y_idxs, x_idxs = np.where(battle.grid == 2)
+        if len(y_idxs) > 0:
+            ages = battle.ages[y_idxs, x_idxs]
+            base_c = np.array(self.colors['team2'])
+            dark_c = np.array(self.colors['team2_dark'])
+            for y, x, age in zip(y_idxs, x_idxs, ages):
+                ratio = min(1.0, age / max_age)
+                final_c = base_c * (1 - ratio) + dark_c * ratio
+                pygame.draw.rect(self.screen, final_c, (x * self.cell_size + 1, y * self.cell_size + 1, rw-2, rh-2))
 
-            territory = stats.get('territory_control', {}).get(team_id, 0.0)
-            self._draw_text(f"Coverage: {territory:.1f}%", (self.width + 20, y_pos))
-            y_pos += padding * 1.5
+    def draw_ui_panel(self, battle: Battle):
+        ui_rect = pygame.Rect(self.width, 0, self.ui_width, self.height)
+        pygame.draw.rect(self.screen, self.colors['ui_bg'], ui_rect)
+        pygame.draw.line(self.screen, (50, 50, 60), (self.width, 0), (self.width, self.height))
 
-    def _draw_text(self, text: str, position: Tuple[int, int], color=(200, 200, 200)):
-        if not pygame.font.get_init():
-             pygame.font.init()
-             self.font = pygame.font.SysFont(None, 24)
-        text_surface = self.font.render(text, True, color)
-        self.screen.blit(text_surface, position)
+        stats = battle.get_battle_stats()
+        
+        x_off = self.width + 15
+        y_off = 20
+        
+        self._text("STATUS: OPS NORMAL", x_off, y_off, (100, 255, 100))
+        y_off += 30
+        
+        self._text(f"Gen: {stats['step']}", x_off, y_off)
+        y_off += 20
+        fps = int(pygame.time.Clock().get_fps()) if 'clock' in globals() else 0
+        self._text(f"FPS: {fps}", x_off, y_off)
+        y_off += 30
+        
+        # Scores
+        c1_score = stats['conquest_score'][1]
+        c2_score = stats['conquest_score'][2]
+        
+        self._text("CYAN FACTION", x_off, y_off, self.colors['team1'])
+        y_off += 20
+        self._text(f"Units: {stats['units_remaining'][1]}", x_off + 10, y_off)
+        y_off += 20
+        self._text(f"Score: {c1_score}", x_off + 10, y_off)
+        y_off += 30
+        
+        self._text("NEON FACTION", x_off, y_off, self.colors['team2'])
+        y_off += 20
+        self._text(f"Units: {stats['units_remaining'][2]}", x_off + 10, y_off)
+        y_off += 20
+        self._text(f"Score: {c2_score}", x_off + 10, y_off)
+        y_off += 30
+        
+        # Draw UI Elements
+        for element in self.ui_elements:
+            element.draw(self.screen)
 
-    def update(self, battle: Battle) -> bool:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
+    def draw_game_over(self, winner: str):
+        # Semi-transparent overlay
+        s = pygame.Surface((self.width, self.height))
+        s.set_alpha(180)
+        s.fill((0, 0, 0))
+        self.screen.blit(s, (0, 0))
+        
+        # Text
+        text = self.font_big.render(f"{winner} WINS!", True, (255, 215, 0))
+        text_rect = text.get_rect(center=(self.width // 2, self.height // 2))
+        
+        # Glow effect (simple shadow)
+        shadow = self.font_big.render(f"{winner} WINS!", True, (100, 50, 0))
+        shadow_rect = shadow.get_rect(center=(self.width // 2 + 2, self.height // 2 + 2))
+        
+        self.screen.blit(shadow, shadow_rect)
+        self.screen.blit(text, text_rect)
+        
+        # Subtitle
+        sub = self.font_header.render("Press RESET to play again", True, (200, 200, 200))
+        sub_rect = sub.get_rect(center=(self.width // 2, self.height // 2 + 40))
+        self.screen.blit(sub, sub_rect)
+        
+        pygame.display.flip()
 
-        if self.screen is None:
-             return True
+    def _text(self, text, x, y, color=None):
+        if color is None: color = self.colors['text']
+        surf = self.font_body.render(text, True, color)
+        self.screen.blit(surf, (x, y))
 
-        self.screen.fill((0, 0, 0))
-        self.draw_terrain(battle.terrain)
+    def update(self, battle: Battle):
+        self.draw_terrain_background(battle)
         self.draw_units(battle)
-        self.draw_stats_panel(battle)
+        self.draw_ui_panel(battle)
         pygame.display.flip()
         return True
 
     def quit_pygame(self):
-        if pygame.get_init():
-             pygame.quit()
-             self.screen = None
-
-    def reset_display(self, width: int, height: int, cell_size: int):
-        self.grid_width = width
-        self.grid_height = height
-        self.cell_size = cell_size
-        self.width = self.grid_width * self.cell_size
-        self.height = self.grid_height * self.cell_size
-
-        try:
-            self.screen = pygame.display.set_mode((self.width + 200, self.height))
-            pygame.display.set_caption("War Simulator - Cellular Automaton")
-        except pygame.error:
-            pass
+        pygame.quit()

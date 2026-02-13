@@ -1,8 +1,8 @@
 # config.yaml
 simulation:
   grid_size: 50
-  cell_size: 12
-  simulation_speed: 0.1
+  cell_size: 14
+  simulation_speed: 0.05 # Faster by default for fluidity
 terrain:
   preset: "valley"
   contact_radius: 1.0
@@ -10,6 +10,11 @@ automaton_rules:
   survival_threshold: [2, 3]
   birth_threshold: [3]
   enemy_tolerance: 3
+  # NEW: Stalemate Breaker Mechanics
+  aging:
+    enabled: true
+    max_age: 60         # Steps before a unit becomes "Old"
+    old_age_death_chance: 0.05 # Chance to die per step once Old (5%)
 teams:
   1:
     initial_pop_percent: 0.2
@@ -19,7 +24,7 @@ teams:
     health: 1
 visualization:
   colors:
-    team1: [255, 0, 0]
-    team2: [0, 0, 255]
+    team1: [0, 255, 200]    # Neon Cyan
+    team2: [255, 0, 100]    # Neon Pink
 victory:
-  conquest_percentage: 70.0
+  conquest_percentage: 85.0
